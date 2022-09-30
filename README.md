@@ -1,6 +1,6 @@
 
 # Kusto
-A brief description of what this project does and who it's for
+Named after famous French Oceanographer Jacques Cousteau (https://en.wikipedia.org/wiki/Jacques_Cousteau), Kusto Query Language was developed to provide a means to deep dive into ocean of data around us.
 
 
 ## Acknowledgements
