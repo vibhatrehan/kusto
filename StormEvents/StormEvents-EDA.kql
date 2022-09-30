@@ -1,0 +1,350 @@
+//=========================================================================================
+// Demo : Storm Chasers
+// DataSource: https://kustosamples.blob.core.windows.net/samplefiles/StormEvents.csv
+// Description:
+//      The Storm Events Database contains the records ccurrence of storms and other 
+//      significant weather phenomena having sufficient intensity to cause loss of life, 
+//      injuries, significant property damage, and/or disruption to commerce.
+// Explore further
+//      floor( StartTime % 1d , 1h)/ 1h
+//      mid = avg(BeginLat)
+//      
+//==========================================================================================
+.show cluster
+
+// ------------------------------------------------------------
+/// Table sample/details : take, project,getschema
+// ------------------------------------------------------------
+StormEvents
+| take 10
+
+StormEvents
+| take 5
+| project  StartTime, EndTime, EventType, State, EventNarrative
+
+StormEvents
+| getschema
+
+StormEvents
+| project US_State=State, EventType, Injuries=InjuriesDirect+InjuriesIndirect, Damage=DamageCrops+DamageProperty
+| take 10
+
+//Remove few columns from display
+StormEvents
+| project-away EpisodeId, EventId
+| take 10
+
+// ------------------------------------------------------------
+/// Order results: sort, top
+// ------------------------------------------------------------
+StormEvents
+| sort by StartTime desc 
+| take 10
+| project  StartTime, EndTime, EventType, State, EventNarrative 
+
+StormEvents
+| top 10 by StartTime asc
+
+StormEvents
+| where DamageProperty > 0
+| project State, EventType, DamageProperty
+| sort by DamageProperty desc
+
+StormEvents
+| where DamageProperty > 0
+| project State, EventType, DamageProperty
+| sort by State asc, DamageProperty asc
+
+// ------------------------------------------------------------
+// Filter: where
+// ------------------------------------------------------------
+StormEvents 
+| where StartTime between (datetime(2007-11-01) .. datetime(2007-12-01))
+| where State == "FLORIDA"
+
+StormEvents
+| where DamageProperty > 0
+| where StartTime > ago(10000d)
+| project State, EventType, DamageProperty
+
+StormEvents
+| where DamageProperty > 0
+| where State == "FLORIDA"
+| where EventType has "wind"
+| project StartTime, EventType, DamageProperty
+
+StormEvents 
+| where EventType contains "free"
+| project StartTime, EventType, DamageProperty
+
+StormEvents
+| where StartTime > datetime(2007-02-01) and StartTime < datetime(2007-03-01)
+| where EventType == 'Flood' and State == 'CALIFORNIA'
+| project StartTime, EndTime , State , EventType , EpisodeNarrative
+
+// ------------------------------------------------------------
+// Agrregate: count, dcount, countif
+// ------------------------------------------------------------
+StormEvents
+| count 
+
+StormEvents
+| summarize count() by State
+| top 5 by count_ desc
+
+StormEvents 
+| summarize StormCount = count(), TypeOfStorms = dcount(EventType) by State
+| top 5 by StormCount desc
+
+//Summarize by categorical + scaler features
+StormEvents 
+| where State in ('TEXAS','KANSAS','IOWA')
+| summarize CountByInjuries = count() by State, bin(StartTime,15d)
+
+StormEvents 
+| where StartTime between (datetime(2007-06-04) .. datetime(2007-06-10))
+| where Source in ("Source","Public","Emergency Manager","Trained Spotter","Law Enforcement")
+| summarize count() by bin(StartTime, 10h), Source
+
+// ------------------------------------------------------------
+// Charts : Column Chart piechart, barchart, linechart, timechart...
+// ------------------------------------------------------------
+StormEvents 
+| where State in ('TEXAS','KANSAS','IOWA')
+| summarize EventCount = count() by State, bin(StartTime,15d)
+| project State, EventCount
+| render columnchart
+
+StormEvents 
+| summarize event_count=count(), mid = avg(BeginLat) by State 
+| sort by event_count
+| where event_count > 1800
+| project State, event_count
+| render columnchart
+
+StormEvents 
+| summarize event_count=count(), mid = avg(BeginLat) by State 
+| sort by mid
+| where event_count > 1800
+| project State, event_count
+| render piechart 
+
+StormEvents
+| summarize event_count=count() by bin(StartTime, 15d)
+| render timechart
+
+StormEvents 
+| where StartTime > datetime(2007-06-04) and StartTime < datetime(2007-06-10) 
+| where Source in ("Source","Public","Emergency Manager","Trained Spotter","Law Enforcement")
+| summarize count() by bin(StartTime, 10h),Source
+| render timechart
+
+// ------------------------------------------------------------
+// ---------- Compute Derived Columns -------------------------
+// ------------------------------------------------------------
+StormEvents
+| limit 5
+| extend Duration = EndTime - StartTime 
+| project StartTime, EndTime, Duration, EventType, State
+
+StormEvents
+| extend hour = floor(StartTime % 1d , 1h)
+| summarize event_count=count() by hour
+| sort by hour asc
+| render timechart
+
+StormEvents
+| extend hour= floor( StartTime % 1d , 1h)
+| where State in ("GULF OF MEXICO","MAINE","VIRGINIA","WISCONSIN","NORTH DAKOTA","NEW JERSEY","OREGON")
+| summarize event_count=count() by hour, State
+| render timechart
+
+StormEvents
+| extend hour= floor( StartTime % 1d , 1h)/ 1h
+| where State in ("GULF OF MEXICO","MAINE","VIRGINIA","WISCONSIN","NORTH DAKOTA","NEW JERSEY","OREGON")
+| summarize event_count=count() by hour, State
+| render columnchart
+
+
+// ------------------------------------------------------------
+// ---------- JOIN -------------------------
+// ------------------------------------------------------------
+// State where both Lightning and Avalanche happened
+StormEvents
+| where EventType == "Lightning"
+| join (
+    StormEvents 
+    | where EventType == "Avalanche"
+) on State  
+| distinct State
+
+let LightningStorms = 
+    StormEvents
+    | where EventType == "Lightning";
+let AvalancheStorms = 
+    StormEvents
+    | where EventType == "Avalanche";
+LightningStorms 
+| join (AvalancheStorms) on State
+| distinct State
+
+
+// ------------------------------------------------------------
+//      Distribution | Percentile | Percentages
+// ------------------------------------------------------------
+StormEvents
+| extend duration = EndTime - StartTime
+| where duration > 0s
+| where duration < 3h
+| summarize event_count = count() by bin(duration,5m)
+| render timechart
+
+StormEvents
+| extend duration = (EndTime - StartTime)
+| where duration > 0s
+| where duration < 3h
+| summarize percentiles(duration, 5,20, 50, 80, 95)
+
+StormEvents
+| extend  duration = EndTime - StartTime
+| where duration > 0s
+| where duration < 3h
+| summarize event_count = count()
+    by bin(duration, 5m), State
+| sort by duration asc
+| summarize percentiles(duration, 5, 20, 50, 80, 95) by State
+
+StormEvents
+| where (InjuriesDirect > 0) and (InjuriesIndirect > 0) 
+| extend Percentage = ( 100 * InjuriesDirect / (InjuriesDirect + InjuriesIndirect) )
+| project StartTime, InjuriesDirect, InjuriesIndirect, Percentage
+
+
+// ------------------------------------------------------------
+//      Challenge
+// ------------------------------------------------------------
+// Find top 10 states which faces Property/Crop damage in April 2017
+StormEvents
+| where StartTime > datetime('2007-03-31')
+| where StartTime < datetime('2007-05-01')
+| extend total_damage = DamageCrops + DamageProperty
+| project State, total_damage, EventType, DamageCrops , DamageProperty
+| top 10 by total_damage
+
+// Aggregate StormEvents by State and EventType
+StormEvents
+| summarize count() by State,EventType
+| render linechart
+
+StormEvents
+| summarize distinctStates = dcount(State) by EventType
+
+StormEvents
+| summarize countif(DamageCrops >0) by State
+
+StormEvents
+| summarize count(),
+    damangeCropsEvents = countif(DamageCrops >0),
+    damangePropertyEvents = countif(DamageProperty >0),
+    distinctEventByState = dcount(EventType)
+    by State
+| sort by damangePropertyEvents
+| render barchart 
+
+StormEvents
+| where State == "TEXAS"
+| distinct EventType
+
+StormEvents
+| where State == "TEXAS"
+| summarize numverOfEventsByType = count() by EventType
+| sort by numverOfEventsByType desc 
+
+StormEvents
+| summarize count() by bin(StartTime,7d)
+| render timechart   
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| summarize sum(damage) by bin(StartTime,7d)
+| render timechart   
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| summarize sum(damage) by EventType
+| render piechart
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| where damage>0
+| summarize average = avg(damage) by EventType
+| sort by average desc
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| summarize average = round(avgif(damage, damage >0)) by State,EventType
+| sort by average desc
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| summarize minDamage = minif(damage,damage >0),  maxDamage = maxif(damage,damage >0), avgif(damage,damage >0) by State
+| sort by maxDamage
+
+StormEvents
+| extend damage =  DamageCrops + DamageProperty
+| where damage > 0
+| summarize count() , percentiles(damage,5,20,50,75,90) by EventType
+| sort by EventType asc
+
+StormEvents
+| where EventType == 'Astronomical Low Tide'
+| extend damage =  DamageCrops + DamageProperty
+| where damage > 0
+
+let MinDamage = 1; // int
+let EventLocation = "ARIZONA"; // string
+StormEvents
+| where State == EventLocation
+| where DamageCrops + DamageProperty >= MinDamage
+| summarize Damage=round(avg(DamageProperty + DamageCrops)) by EventType
+| sort by Damage
+
+let MostFrequentEventType = toscalar(
+    StormEvents
+    | summarize count() by EventType
+    | top 1 by count_
+    | project EventType);
+StormEvents
+| where EventType == MostFrequentEventType
+| summarize count() by startofmonth(StartTime)
+| render columnchart
+
+let KillerStorms =
+    StormEvents
+    | where DeathsDirect + DeathsIndirect > 0
+    | project State, EventType, Deaths=DeathsDirect + DeathsIndirect, StartTime;
+KillerStorms
+| where StartTime between (datetime('2007-04-01')..datetime('2007-04-30'))
+| summarize DistinctKillerEventTypes=dcount(EventType), TotalDeaths=sum(Deaths) by State
+| sort by TotalDeaths
+
+let Pcent = (portion: real, total: real) { round(100 * portion / total, 2) };
+StormEvents
+| extend Damage = DamageCrops + DamageProperty
+| summarize TotalEvents = count(), TotalDamagingEvents = countif(Damage > 0) by EventType
+| project EventType, TotalDamagingEvents, TotalEvents, Percentage = Pcent(TotalDamagingEvents, TotalEvents)
+| sort by EventType asc
+
+let euroValue = (usdValue: real) {usdValue/1.14};
+StormEvents
+| where EventType has 'Flood'
+| extend totalDamage = euroValue(DamageCrops + DamageProperty)
+| summarize totalDamage = sumif(totalDamage,totalDamage>0) by bin(StartTime,7d)
+| render columnchart
+
+let euroValue = (usdValue: real) {usdValue/1.14};
+StormEvents
+| where EventType has 'Flood'
+| extend totalDamage = euroValue(DamageCrops + DamageProperty)
+| summarize totalDamage = sumif(totalDamage,totalDamage>0) by startofweek(StartTime)
+| render columnchart
